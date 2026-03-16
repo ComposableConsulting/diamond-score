@@ -1,0 +1,657 @@
+{% extends "base.html" %}
+{% block title %}Pitch Tracker — {{ game.home_team }} vs {{ game.away_team }}{% endblock %}
+
+{% block head %}
+<style>
+  /* ── Strike Zone ────────────────────────────────────────── */
+  .zone-wrap {
+    position: relative;
+    margin: 0 auto;
+    user-select: none; -webkit-user-select: none;
+  }
+  .zone-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    gap: 3px;
+    background: var(--border);
+    border: 2px solid rgba(255,255,255,0.25);
+    border-radius: 4px;
+    padding: 3px;
+    aspect-ratio: 1 / 1.1;
+  }
+  .zone-cell {
+    position: relative;
+    border-radius: 3px;
+    background: rgba(255,255,255,0.04);
+    cursor: pointer;
+    transition: background .1s;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+    min-height: 70px;
+  }
+  .zone-cell:active { transform: scale(0.96); }
+  .zone-cell .zone-num {
+    font-family: var(--font-display);
+    font-size: 0.7rem; font-weight: 700;
+    color: rgba(255,255,255,0.2);
+    position: absolute; top: 4px; left: 6px;
+  }
+  .zone-cell .zone-count {
+    font-family: var(--font-display);
+    font-size: 1.6rem; font-weight: 800;
+    color: var(--chalk);
+    position: relative; z-index: 2;
+  }
+  /* Heat fill overlay */
+  .zone-cell .heat {
+    position: absolute; inset: 0; border-radius: 3px;
+    transition: background .3s;
+    z-index: 1;
+  }
+
+  /* Ball zone (outside the grid) */
+  .ball-zone {
+    position: absolute;
+    inset: -28px;
+    border: 2px dashed rgba(255,255,255,0.1);
+    border-radius: 8px;
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  /* ── Pitch Type Selector ─────────────────────────────────── */
+  .pitch-type-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 6px;
+  }
+  .pt-btn {
+    font-family: var(--font-display);
+    font-size: 0.78rem; font-weight: 700;
+    letter-spacing: 0.05em; text-transform: uppercase;
+    border: 1.5px solid var(--border-hi);
+    border-radius: var(--r-sm);
+    background: var(--navy-light);
+    color: var(--chalk-dim);
+    padding: 8px 4px;
+    cursor: pointer; text-align: center;
+    transition: all .12s;
+  }
+  .pt-btn.active {
+    border-color: var(--green);
+    color: var(--green);
+    background: rgba(0,200,83,0.1);
+  }
+
+  /* ── Result Selector ─────────────────────────────────────── */
+  .result-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 6px;
+  }
+  .res-btn {
+    font-family: var(--font-display);
+    font-size: 0.72rem; font-weight: 700;
+    letter-spacing: 0.04em; text-transform: uppercase;
+    border: 1.5px solid var(--border-hi);
+    border-radius: var(--r-sm);
+    background: var(--navy-light);
+    color: var(--chalk-dim);
+    padding: 8px 4px;
+    cursor: pointer; text-align: center;
+    transition: all .12s;
+  }
+  .res-btn.active { color: #000; border-color: transparent; }
+  .res-btn[data-result="ball"].active          { background: var(--green); color: #000; }
+  .res-btn[data-result="called_strike"].active { background: var(--red); color: #fff; }
+  .res-btn[data-result="swinging_strike"].active { background: #c0002a; color: #fff; }
+  .res-btn[data-result="foul"].active          { background: var(--amber); color: #000; }
+  .res-btn[data-result="hit"].active           { background: var(--sky); color: #000; }
+
+  /* ── Pitch Log ───────────────────────────────────────────── */
+  .pitch-log-row {
+    display: grid;
+    grid-template-columns: 32px 1fr 80px 90px 36px;
+    gap: 6px; align-items: center;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.82rem;
+  }
+  .pitch-log-row:last-child { border-bottom: none; }
+  .pitch-num { font-family: var(--font-display); font-weight: 700; color: var(--chalk-dim); }
+  .result-badge {
+    font-family: var(--font-display); font-size: 0.68rem; font-weight: 700;
+    letter-spacing: 0.06em; text-transform: uppercase;
+    padding: 2px 7px; border-radius: 10px; text-align: center;
+  }
+  .rb-ball            { background: rgba(0,200,83,0.2);  color: var(--green); }
+  .rb-called_strike   { background: rgba(255,59,59,0.2); color: var(--red); }
+  .rb-swinging_strike { background: rgba(192,0,42,0.25); color: #ff6b8a; }
+  .rb-foul            { background: rgba(255,179,0,0.2); color: var(--amber); }
+  .rb-hit             { background: rgba(64,196,255,0.2);color: var(--sky); }
+  .del-btn {
+    background: none; border: none; color: var(--chalk-dim);
+    cursor: pointer; font-size: 1rem; padding: 2px 6px;
+    border-radius: 4px; transition: color .12s;
+  }
+  .del-btn:hover { color: var(--red); }
+
+  /* ── Zone heat map legend ────────────────────────────────── */
+  .heat-legend {
+    display: flex; gap: 6px; align-items: center;
+    font-size: 0.75rem; color: var(--chalk-dim);
+  }
+  .heat-swatch {
+    width: 14px; height: 14px; border-radius: 2px;
+  }
+
+  /* ── Tabs ────────────────────────────────────────────────── */
+  .tab-bar {
+    display: flex; gap: 0;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 16px;
+  }
+  .tab-btn {
+    font-family: var(--font-display); font-weight: 700;
+    font-size: 0.9rem; letter-spacing: .05em; text-transform: uppercase;
+    background: none; border: none; color: var(--chalk-dim);
+    cursor: pointer; padding: 10px 16px;
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+    transition: color .12s;
+  }
+  .tab-btn.active { color: var(--chalk); border-bottom-color: var(--green); }
+
+  /* ── Stats table ─────────────────────────────────────────── */
+  .stats-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  .stats-table th {
+    font-family: var(--font-display); font-weight: 700; font-size: 0.75rem;
+    letter-spacing: .08em; text-transform: uppercase;
+    color: var(--chalk-dim); text-align: left; padding: 6px 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .stats-table td { padding: 7px 8px; border-bottom: 1px solid var(--border); }
+  .stats-table tr:last-child td { border-bottom: none; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="padding-top: 12px;" id="app">
+
+  <!-- Header -->
+  <div class="flex-between" style="margin-bottom: 12px;">
+    <a href="/game/{{ game.id }}" class="btn btn-ghost btn-sm">← Scoreboard</a>
+    <div style="font-family:var(--font-display); font-size:1rem; font-weight:700; text-align:center;">
+      Pitch Tracker
+      <div style="font-size:0.72rem; color:var(--chalk-dim); font-weight:400;">{{ game.home_team }} vs {{ game.away_team }}</div>
+    </div>
+    <div style="width: 90px;"></div>
+  </div>
+
+  <!-- Current context bar -->
+  <div class="card" style="padding: 10px 14px; margin-bottom: 12px;">
+    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; text-align:center;">
+      <div>
+        <div class="section-label" style="margin-bottom:2px;">Inning</div>
+        <div style="font-family:var(--font-display); font-size:1.1rem; font-weight:800;" id="ctx-inning">—</div>
+      </div>
+      <div>
+        <div class="section-label" style="margin-bottom:2px;">Pitcher</div>
+        <div style="font-family:var(--font-display); font-size:1rem; font-weight:700;" id="ctx-pitcher">—</div>
+      </div>
+      <div>
+        <div class="section-label" style="margin-bottom:2px;">Batter</div>
+        <div style="font-family:var(--font-display); font-size:1rem; font-weight:700;" id="ctx-batter">—</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tab-bar">
+    <button class="tab-btn active" onclick="switchTab('record')">Record</button>
+    <button class="tab-btn" onclick="switchTab('heatmap')">Heat Map</button>
+    <button class="tab-btn" onclick="switchTab('log')">Pitch Log</button>
+    <button class="tab-btn" onclick="switchTab('stats')">Stats</button>
+  </div>
+
+  <!-- ── TAB: RECORD ─────────────────────────────────────── -->
+  <div id="tab-record">
+
+    <!-- Pitch Type -->
+    <div class="section-label">Pitch Type</div>
+    <div class="pitch-type-grid" style="margin-bottom: 14px;">
+      <button class="pt-btn active" data-type="fastball" onclick="setPitchType('fastball')">FB</button>
+      <button class="pt-btn" data-type="curveball" onclick="setPitchType('curveball')">CB</button>
+      <button class="pt-btn" data-type="changeup" onclick="setPitchType('changeup')">CH</button>
+      <button class="pt-btn" data-type="slider" onclick="setPitchType('slider')">SL</button>
+      <button class="pt-btn" data-type="sinker" onclick="setPitchType('sinker')">SI</button>
+    </div>
+
+    <!-- Result -->
+    <div class="section-label">Result</div>
+    <div class="result-grid" style="margin-bottom: 16px;">
+      <button class="res-btn active" data-result="ball" onclick="setResult('ball')">Ball</button>
+      <button class="res-btn" data-result="called_strike" onclick="setResult('called_strike')">Called K</button>
+      <button class="res-btn" data-result="swinging_strike" onclick="setResult('swinging_strike')">Swing K</button>
+      <button class="res-btn" data-result="foul" onclick="setResult('foul')">Foul</button>
+      <button class="res-btn" data-result="hit" onclick="setResult('hit')">Hit</button>
+    </div>
+
+    <!-- Strike Zone -->
+    <div class="section-label">Tap the zone &nbsp;<span style="font-weight:400; text-transform:none; letter-spacing:0;">— tap outside for ball</span></div>
+    <div style="max-width: 340px; margin: 0 auto; padding: 32px;">
+      <div class="zone-wrap" id="zone-wrap">
+        <div class="ball-zone"></div>
+        <div class="zone-grid" id="zone-grid">
+          <!-- Zones 1-9: top-left to bottom-right -->
+          <div class="zone-cell" data-zone="1" onclick="recordPitch(1, 16.5, 16.5)">
+            <div class="heat" id="heat-1"></div>
+            <div class="zone-num">1</div>
+            <div class="zone-count" id="zc-1">0</div>
+          </div>
+          <div class="zone-cell" data-zone="2" onclick="recordPitch(2, 50, 16.5)">
+            <div class="heat" id="heat-2"></div>
+            <div class="zone-num">2</div>
+            <div class="zone-count" id="zc-2">0</div>
+          </div>
+          <div class="zone-cell" data-zone="3" onclick="recordPitch(3, 83.5, 16.5)">
+            <div class="heat" id="heat-3"></div>
+            <div class="zone-num">3</div>
+            <div class="zone-count" id="zc-3">0</div>
+          </div>
+          <div class="zone-cell" data-zone="4" onclick="recordPitch(4, 16.5, 50)">
+            <div class="heat" id="heat-4"></div>
+            <div class="zone-num">4</div>
+            <div class="zone-count" id="zc-4">0</div>
+          </div>
+          <div class="zone-cell" data-zone="5" onclick="recordPitch(5, 50, 50)">
+            <div class="heat" id="heat-5"></div>
+            <div class="zone-num">5</div>
+            <div class="zone-count" id="zc-5">0</div>
+          </div>
+          <div class="zone-cell" data-zone="6" onclick="recordPitch(6, 83.5, 50)">
+            <div class="heat" id="heat-6"></div>
+            <div class="zone-num">6</div>
+            <div class="zone-count" id="zc-6">0</div>
+          </div>
+          <div class="zone-cell" data-zone="7" onclick="recordPitch(7, 16.5, 83.5)">
+            <div class="heat" id="heat-7"></div>
+            <div class="zone-num">7</div>
+            <div class="zone-count" id="zc-7">0</div>
+          </div>
+          <div class="zone-cell" data-zone="8" onclick="recordPitch(8, 50, 83.5)">
+            <div class="heat" id="heat-8"></div>
+            <div class="zone-num">8</div>
+            <div class="zone-count" id="zc-8">0</div>
+          </div>
+          <div class="zone-cell" data-zone="9" onclick="recordPitch(9, 83.5, 83.5)">
+            <div class="heat" id="heat-9"></div>
+            <div class="zone-num">9</div>
+            <div class="zone-count" id="zc-9">0</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Ball zone tap area (outside the grid) -->
+      <div style="text-align:center; margin-top: 16px;">
+        <button class="btn btn-ghost btn-block" onclick="recordPitch(0, 50, 110)" style="border-style:dashed; color:var(--green);">
+          Ball — Outside Zone
+        </button>
+      </div>
+    </div>
+
+    <!-- Last pitch feedback -->
+    <div id="last-pitch" class="card" style="text-align:center; margin-top:8px; padding:10px; display:none;">
+      <span style="font-family:var(--font-display); font-size:0.85rem; color:var(--chalk-dim);">Last: </span>
+      <span id="last-pitch-text" style="font-family:var(--font-display); font-weight:700;"></span>
+    </div>
+
+  </div>
+
+  <!-- ── TAB: HEAT MAP ───────────────────────────────────── -->
+  <div id="tab-heatmap" style="display:none;">
+
+    <!-- Pitcher filter -->
+    <div class="field" style="margin-bottom:14px;">
+      <label>Pitcher</label>
+      <select id="hm-pitcher-filter" onchange="renderHeatmap()">
+        <option value="">All pitchers</option>
+      </select>
+    </div>
+    <div class="field" style="margin-bottom:14px;">
+      <label>Pitch Type</label>
+      <select id="hm-type-filter" onchange="renderHeatmap()">
+        <option value="">All types</option>
+        <option value="fastball">Fastball</option>
+        <option value="curveball">Curveball</option>
+        <option value="changeup">Changeup</option>
+        <option value="slider">Slider</option>
+        <option value="sinker">Sinker</option>
+      </select>
+    </div>
+
+    <div class="section-label">Strike zone heat map</div>
+    <div style="max-width: 300px; margin: 12px auto 0;">
+      <div class="zone-grid" id="hm-grid" style="pointer-events:none;">
+        <div class="zone-cell" data-zone="1"><div class="heat" id="hh-1"></div><div class="zone-count" id="hc-1">0</div></div>
+        <div class="zone-cell" data-zone="2"><div class="heat" id="hh-2"></div><div class="zone-count" id="hc-2">0</div></div>
+        <div class="zone-cell" data-zone="3"><div class="heat" id="hh-3"></div><div class="zone-count" id="hc-3">0</div></div>
+        <div class="zone-cell" data-zone="4"><div class="heat" id="hh-4"></div><div class="zone-count" id="hc-4">0</div></div>
+        <div class="zone-cell" data-zone="5"><div class="heat" id="hh-5"></div><div class="zone-count" id="hc-5">0</div></div>
+        <div class="zone-cell" data-zone="6"><div class="heat" id="hh-6"></div><div class="zone-count" id="hc-6">0</div></div>
+        <div class="zone-cell" data-zone="7"><div class="heat" id="hh-7"></div><div class="zone-count" id="hc-7">0</div></div>
+        <div class="zone-cell" data-zone="8"><div class="heat" id="hh-8"></div><div class="zone-count" id="hc-8">0</div></div>
+        <div class="zone-cell" data-zone="9"><div class="heat" id="hh-9"></div><div class="zone-count" id="hc-9">0</div></div>
+      </div>
+    </div>
+
+    <div class="heat-legend" style="margin-top:14px; justify-content:center;">
+      <div class="heat-swatch" style="background:rgba(0,200,83,0.15)"></div><span>Low</span>
+      <div class="heat-swatch" style="background:rgba(255,179,0,0.4)"></div><span>Medium</span>
+      <div class="heat-swatch" style="background:rgba(255,59,59,0.65)"></div><span>High</span>
+    </div>
+
+    <!-- Strike % by zone -->
+    <div class="section-label" style="margin-top:20px;">Strike % by zone</div>
+    <div style="max-width: 300px; margin: 8px auto 0;">
+      <div class="zone-grid" id="sp-grid" style="pointer-events:none;">
+        <div class="zone-cell" data-zone="1"><div class="heat" id="sh-1"></div><div class="zone-count" id="sc-1" style="font-size:1rem;">—</div></div>
+        <div class="zone-cell" data-zone="2"><div class="heat" id="sh-2"></div><div class="zone-count" id="sc-2" style="font-size:1rem;">—</div></div>
+        <div class="zone-cell" data-zone="3"><div class="heat" id="sh-3"></div><div class="zone-count" id="sc-3" style="font-size:1rem;">—</div></div>
+        <div class="zone-cell" data-zone="4"><div class="heat" id="sh-4"></div><div class="zone-count" id="sc-4" style="font-size:1rem;">—</div></div>
+        <div class="zone-cell" data-zone="5"><div class="heat" id="sh-5"></div><div class="zone-count" id="sc-5" style="font-size:1rem;">—</div></div>
+        <div class="zone-cell" data-zone="6"><div class="heat" id="sh-6"></div><div class="zone-count" id="sc-6" style="font-size:1rem;">—</div></div>
+        <div class="zone-cell" data-zone="7"><div class="heat" id="sh-7"></div><div class="zone-count" id="sc-7" style="font-size:1rem;">—</div></div>
+        <div class="zone-cell" data-zone="8"><div class="heat" id="sh-8"></div><div class="zone-count" id="sc-8" style="font-size:1rem;">—</div></div>
+        <div class="zone-cell" data-zone="9"><div class="heat" id="sh-9"></div><div class="zone-count" id="sc-9" style="font-size:1rem;">—</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── TAB: PITCH LOG ──────────────────────────────────── -->
+  <div id="tab-log" style="display:none;">
+    <div id="pitch-log-list">
+      <div style="color:var(--chalk-dim); font-size:0.9rem;">No pitches recorded yet.</div>
+    </div>
+  </div>
+
+  <!-- ── TAB: STATS ──────────────────────────────────────── -->
+  <div id="tab-stats" style="display:none;">
+    <div id="stats-content">
+      <div style="color:var(--chalk-dim); font-size:0.9rem;">No data yet.</div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const GAME_ID = {{ game.id }};
+  const PITCH_TYPES = { fastball:'FB', curveball:'CB', changeup:'CH', slider:'SL', sinker:'SI' };
+  const RESULT_LABELS = {
+    ball: 'Ball', called_strike: 'Called K',
+    swinging_strike: 'Swing K', foul: 'Foul', hit: 'Hit'
+  };
+
+  let pitchType = 'fastball';
+  let result = 'ball';
+  let gameState = null;
+  let allData = { pitches: [], zone_summary: [], pitchers: [] };
+
+  // ── SELECTORS ────────────────────────────────────────────
+  function setPitchType(type) {
+    pitchType = type;
+    document.querySelectorAll('.pt-btn').forEach(b => b.classList.toggle('active', b.dataset.type === type));
+  }
+
+  function setResult(r) {
+    result = r;
+    document.querySelectorAll('.res-btn').forEach(b => b.classList.toggle('active', b.dataset.result === r));
+  }
+
+  // ── TABS ─────────────────────────────────────────────────
+  function switchTab(name) {
+    ['record','heatmap','log','stats'].forEach(t => {
+      document.getElementById(`tab-${t}`).style.display = t === name ? '' : 'none';
+    });
+    document.querySelectorAll('.tab-btn').forEach(b => {
+      b.classList.toggle('active', b.textContent.toLowerCase().replace(' ','') === name ||
+        (name === 'heatmap' && b.textContent === 'Heat Map') ||
+        (name === 'log' && b.textContent === 'Pitch Log'));
+    });
+    if (name === 'heatmap') renderHeatmap();
+    if (name === 'log') renderLog();
+    if (name === 'stats') renderStats();
+  }
+
+  // ── RECORD PITCH ─────────────────────────────────────────
+  async function recordPitch(zone, x, y) {
+    // Flash the zone
+    if (zone > 0) {
+      const cell = document.querySelector(`[data-zone="${zone}"]`);
+      if (cell) {
+        cell.style.background = 'rgba(0,200,83,0.3)';
+        setTimeout(() => cell.style.background = '', 300);
+      }
+    }
+
+    try {
+      const res = await fetch(`/api/games/${GAME_ID}/pitch_location`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ pitch_type: pitchType, zone, x, y, result })
+      });
+      const data = await res.json();
+
+      // Update zone counts on record tab
+      updateZoneCounts(data.stats);
+
+      // Show last pitch feedback
+      const lp = document.getElementById('last-pitch');
+      const lpt = document.getElementById('last-pitch-text');
+      lp.style.display = '';
+      lpt.textContent = `#${data.pitch_num} — ${PITCH_TYPES[pitchType]} — Zone ${zone || 'B'} — ${RESULT_LABELS[result]}`;
+      lpt.style.color = result === 'ball' ? 'var(--green)' :
+                        result.includes('strike') ? 'var(--red)' :
+                        result === 'foul' ? 'var(--amber)' : 'var(--sky)';
+
+      // Refresh full data
+      await loadData();
+
+    } catch(e) { showToast('Network error'); }
+  }
+
+  function updateZoneCounts(stats) {
+    // Reset all
+    for (let z = 1; z <= 9; z++) {
+      const el = document.getElementById(`zc-${z}`);
+      if (el) el.textContent = '0';
+    }
+    // Sum by zone (all pitch types combined for record tab)
+    const zoneTotals = {};
+    stats.forEach(s => {
+      zoneTotals[s.zone] = (zoneTotals[s.zone] || 0) + s.cnt;
+    });
+    Object.entries(zoneTotals).forEach(([z, cnt]) => {
+      const el = document.getElementById(`zc-${z}`);
+      if (el) el.textContent = cnt;
+    });
+  }
+
+  // ── HEAT MAP ─────────────────────────────────────────────
+  function renderHeatmap() {
+    const pitcher = document.getElementById('hm-pitcher-filter')?.value || '';
+    const type = document.getElementById('hm-type-filter')?.value || '';
+
+    // Filter zone summary
+    let filtered = allData.zone_summary.filter(s => {
+      if (pitcher && s.pitcher_name !== pitcher) return false;
+      if (type && s.pitch_type !== type) return false;
+      return true;
+    });
+
+    // Total per zone
+    const zoneTotals = {};
+    const zoneStrikes = {};
+    filtered.forEach(s => {
+      zoneTotals[s.zone] = (zoneTotals[s.zone] || 0) + s.cnt;
+      if (s.result !== 'ball') {
+        zoneStrikes[s.zone] = (zoneStrikes[s.zone] || 0) + s.cnt;
+      }
+    });
+
+    const maxCount = Math.max(...Object.values(zoneTotals), 1);
+
+    for (let z = 1; z <= 9; z++) {
+      const total = zoneTotals[z] || 0;
+      const strikes = zoneStrikes[z] || 0;
+      const intensity = total / maxCount;
+
+      // Heat fill: green→amber→red based on intensity
+      const heat = document.getElementById(`hh-${z}`);
+      if (heat) {
+        if (intensity === 0) {
+          heat.style.background = 'transparent';
+        } else if (intensity < 0.4) {
+          heat.style.background = `rgba(0,200,83,${intensity * 0.8})`;
+        } else if (intensity < 0.7) {
+          heat.style.background = `rgba(255,179,0,${intensity * 0.7})`;
+        } else {
+          heat.style.background = `rgba(255,59,59,${intensity * 0.85})`;
+        }
+      }
+      const hc = document.getElementById(`hc-${z}`);
+      if (hc) hc.textContent = total || '0';
+
+      // Strike % grid
+      const strikePct = total > 0 ? Math.round((strikes / total) * 100) : null;
+      const sh = document.getElementById(`sh-${z}`);
+      const sc = document.getElementById(`sc-${z}`);
+      if (sh && sc) {
+        sc.textContent = strikePct !== null ? `${strikePct}%` : '—';
+        sh.style.background = strikePct === null ? 'transparent' :
+          strikePct > 66 ? `rgba(0,200,83,0.35)` :
+          strikePct > 33 ? `rgba(255,179,0,0.35)` :
+          `rgba(255,59,59,0.3)`;
+      }
+    }
+  }
+
+  // ── PITCH LOG ────────────────────────────────────────────
+  function renderLog() {
+    const container = document.getElementById('pitch-log-list');
+    if (!allData.pitches.length) {
+      container.innerHTML = '<div style="color:var(--chalk-dim); font-size:0.9rem;">No pitches recorded yet.</div>';
+      return;
+    }
+    // Show newest first
+    const reversed = [...allData.pitches].reverse();
+    container.innerHTML = reversed.map(p => `
+      <div class="pitch-log-row">
+        <span class="pitch-num">#${p.pitch_num}</span>
+        <span>
+          <span style="font-weight:600;">${PITCH_TYPES[p.pitch_type] || p.pitch_type}</span>
+          <span style="color:var(--chalk-dim); font-size:0.75rem;"> · Inn ${p.inning} · Zone ${p.zone || 'B'}</span>
+          <div style="font-size:0.75rem; color:var(--chalk-dim);">${p.batter_name || ''}</div>
+        </span>
+        <span class="result-badge rb-${p.result}">${RESULT_LABELS[p.result]}</span>
+        <span style="color:var(--chalk-dim); font-size:0.72rem;">${p.pitcher_name}</span>
+        <button class="del-btn" onclick="deletePitch(${p.id})" title="Delete">×</button>
+      </div>
+    `).join('');
+  }
+
+  // ── STATS ────────────────────────────────────────────────
+  function renderStats() {
+    const container = document.getElementById('stats-content');
+    if (!allData.pitches.length) {
+      container.innerHTML = '<div style="color:var(--chalk-dim); font-size:0.9rem;">No data yet.</div>';
+      return;
+    }
+
+    // Group by pitcher then pitch type
+    const byPitcher = {};
+    allData.pitches.forEach(p => {
+      if (!byPitcher[p.pitcher_name]) byPitcher[p.pitcher_name] = {};
+      const pt = byPitcher[p.pitcher_name];
+      if (!pt[p.pitch_type]) pt[p.pitch_type] = { total:0, strikes:0, balls:0, foul:0, hit:0 };
+      pt[p.pitch_type].total++;
+      if (p.result === 'ball') pt[p.pitch_type].balls++;
+      else if (p.result === 'foul') pt[p.pitch_type].foul++;
+      else if (p.result === 'hit') pt[p.pitch_type].hit++;
+      else pt[p.pitch_type].strikes++;
+    });
+
+    let html = '';
+    Object.entries(byPitcher).forEach(([pitcher, types]) => {
+      const totalPitches = Object.values(types).reduce((s,v) => s + v.total, 0);
+      const totalStrikes = Object.values(types).reduce((s,v) => s + v.strikes, 0);
+      html += `
+        <div style="font-family:var(--font-display); font-size:1rem; font-weight:800; margin-bottom:8px; margin-top:16px;">
+          ${pitcher} <span style="color:var(--chalk-dim); font-weight:400; font-size:0.85rem;">${totalPitches} pitches · ${Math.round(totalStrikes/totalPitches*100)}% strikes</span>
+        </div>
+        <table class="stats-table">
+          <thead><tr><th>Type</th><th>Total</th><th>Strike%</th><th>Ball%</th><th>Foul</th><th>Hit</th></tr></thead>
+          <tbody>
+      `;
+      Object.entries(types).forEach(([type, d]) => {
+        const strikePct = Math.round(d.strikes / d.total * 100);
+        const ballPct = Math.round(d.balls / d.total * 100);
+        html += `<tr>
+          <td style="font-weight:600;">${PITCH_TYPES[type] || type}</td>
+          <td>${d.total}</td>
+          <td style="color:var(--green);">${strikePct}%</td>
+          <td style="color:var(--red);">${ballPct}%</td>
+          <td style="color:var(--amber);">${d.foul}</td>
+          <td style="color:var(--sky);">${d.hit}</td>
+        </tr>`;
+      });
+      html += '</tbody></table>';
+    });
+    container.innerHTML = html;
+  }
+
+  // ── DELETE PITCH ─────────────────────────────────────────
+  async function deletePitch(id) {
+    if (!confirm('Delete this pitch?')) return;
+    await fetch(`/api/games/${GAME_ID}/pitch_locations/${id}`, { method: 'DELETE' });
+    await loadData();
+    renderLog();
+    showToast('Pitch deleted');
+  }
+
+  // ── DATA LOADING ─────────────────────────────────────────
+  async function loadData() {
+    try {
+      const [pitchRes, stateRes] = await Promise.all([
+        fetch(`/api/games/${GAME_ID}/pitch_locations`),
+        fetch(`/api/games/${GAME_ID}/state`)
+      ]);
+      allData = await pitchRes.json();
+      gameState = await stateRes.json();
+
+      // Update context bar
+      const ord = ['','1st','2nd','3rd','4th','5th','6th','7th'][gameState.inning] || gameState.inning+'th';
+      document.getElementById('ctx-inning').textContent = `${gameState.half === 'top' ? '▲' : '▼'} ${ord}`;
+      document.getElementById('ctx-pitcher').textContent = gameState.current_pitcher[gameState.half] || '—';
+
+      // Update pitcher filter dropdowns
+      const sel = document.getElementById('hm-pitcher-filter');
+      if (sel) {
+        const current = sel.value;
+        sel.innerHTML = '<option value="">All pitchers</option>' +
+          allData.pitchers.map(p => `<option value="${p}"${p===current?' selected':''}>${p}</option>`).join('');
+      }
+
+      // Update zone counts on record tab
+      updateZoneCounts(allData.zone_summary);
+
+    } catch(e) { /* offline */ }
+  }
+
+  // ── INIT ─────────────────────────────────────────────────
+  loadData();
+  setInterval(loadData, 3000);
+</script>
+{% endblock %}
