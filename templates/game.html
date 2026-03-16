@@ -1,0 +1,681 @@
+{% extends "base.html" %}
+{% block title %}{{ game.home_team }} vs {{ game.away_team }} — Diamond Score{% endblock %}
+
+{% block head %}
+<style>
+  /* ── Scoreboard ─────────────────────────────────────────── */
+  .scoreboard {
+    background: linear-gradient(160deg, var(--navy-light) 0%, var(--panel) 100%);
+    border: 1px solid var(--border-hi);
+    border-radius: var(--r-lg);
+    overflow: hidden;
+    margin-top: 16px;
+  }
+  .sb-top {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    padding: 16px 20px 12px;
+    gap: 12px;
+  }
+  .sb-team { text-align: center; }
+  .sb-team-name {
+    font-family: var(--font-display);
+    font-size: clamp(1rem, 4vw, 1.3rem);
+    font-weight: 700; letter-spacing: 0.05em;
+    text-transform: uppercase; color: var(--chalk-dim);
+  }
+  .sb-score {
+    font-family: var(--font-display);
+    font-size: clamp(3rem, 10vw, 5rem);
+    font-weight: 800; line-height: 1;
+    color: var(--chalk);
+    transition: color .3s;
+  }
+  .sb-score.scoring { color: var(--green); }
+  .sb-vs { font-family: var(--font-display); font-size: 1rem; color: var(--chalk-dim); font-weight: 700; }
+
+  .sb-inning-bar {
+    display: flex; align-items: center; justify-content: center;
+    gap: 8px;
+    background: rgba(0,0,0,0.2);
+    padding: 8px 16px;
+    border-top: 1px solid var(--border);
+    font-family: var(--font-display); font-size: 0.9rem; font-weight: 600;
+    letter-spacing: 0.08em; text-transform: uppercase; color: var(--chalk-dim);
+  }
+  .inning-pill {
+    background: var(--navy-light); border: 1px solid var(--border-hi);
+    border-radius: 20px; padding: 3px 12px;
+    font-size: 0.85rem; color: var(--chalk);
+  }
+  .half-arrow { font-size: 0.75rem; color: var(--green); }
+
+  /* Linescore */
+  .linescore { overflow-x: auto; padding: 10px 16px 14px; }
+  .linescore table {
+    width: 100%; border-collapse: collapse;
+    font-family: var(--font-display); font-size: 0.85rem; font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+  .linescore th, .linescore td {
+    text-align: center; padding: 4px 6px; min-width: 28px;
+    border: 1px solid var(--border);
+  }
+  .linescore th { color: var(--chalk-dim); font-weight: 700; background: rgba(0,0,0,0.2); }
+  .linescore td.active-inn { background: rgba(0,200,83,0.12); color: var(--green); }
+  .linescore td.total { font-weight: 800; color: var(--chalk); background: rgba(0,0,0,0.2); border-left: 2px solid var(--border-hi); }
+
+  /* ── Count / Outs ───────────────────────────────────────── */
+  .count-panel {
+    display: grid; grid-template-columns: 1fr 1fr 1fr;
+    gap: 1px; background: var(--border);
+    border: 1px solid var(--border); border-radius: var(--r-md);
+    overflow: hidden; margin-top: 14px;
+  }
+  .count-cell {
+    background: var(--panel);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: 12px 8px; gap: 8px;
+  }
+  .count-cell-label {
+    font-family: var(--font-display); font-size: 0.7rem; font-weight: 700;
+    letter-spacing: 0.12em; text-transform: uppercase; color: var(--chalk-dim);
+  }
+  .count-dots { display: flex; gap: 6px; }
+
+  /* ── Bases Diamond ──────────────────────────────────────── */
+  .bases-svg { display: block; margin: 0 auto; }
+
+  /* ── Current batter / pitcher info ─────────────────────── */
+  .matchup-bar {
+    display: grid; grid-template-columns: 1fr auto 1fr;
+    align-items: center; gap: 8px;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: var(--r-md); padding: 10px 14px; margin-top: 14px;
+  }
+  .matchup-side { display: flex; flex-direction: column; }
+  .matchup-role { font-size: 0.68rem; font-weight: 700; letter-spacing:.1em; text-transform:uppercase; color:var(--chalk-dim); }
+  .matchup-name { font-family:var(--font-display); font-size:1rem; font-weight:700; margin-top:2px; }
+  .matchup-divider { color:var(--chalk-dim); font-size:1.2rem; text-align:center; }
+
+  /* ── Action Sections ────────────────────────────────────── */
+  .section-card { margin-top: 14px; }
+
+  /* Spray chart */
+  #spray-canvas {
+    width: 100%; touch-action: none;
+    border-radius: var(--r-md);
+    cursor: crosshair;
+  }
+  .spray-legend {
+    display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px;
+  }
+  .spray-legend-item {
+    display: flex; align-items: center; gap: 5px;
+    font-size: 0.78rem; color: var(--chalk-dim);
+  }
+  .spray-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+  }
+
+  /* Pitcher panel */
+  .pitcher-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 0; border-bottom: 1px solid var(--border);
+  }
+  .pitcher-row:last-child { border-bottom: none; }
+  .pitcher-count {
+    font-family: var(--font-display); font-size: 1.3rem; font-weight: 800;
+    color: var(--amber);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="app" style="padding-top: 12px;">
+
+  <!-- Back + Export -->
+  <div class="flex-between" style="margin-bottom:4px;">
+    <a href="/" class="btn btn-ghost btn-sm">← Games</a>
+    <div style="display:flex; gap:8px;">
+      <button class="btn btn-ghost btn-sm" onclick="exportCSV()">Export CSV</button>
+      <button class="btn btn-ghost btn-sm" onclick="openSprayModal()">Spray Chart</button>
+    </div>
+  </div>
+
+  <!-- Scoreboard -->
+  <div class="scoreboard">
+    <div class="sb-top">
+      <div class="sb-team">
+        <div class="sb-team-name" id="away-name">{{ game.away_team }}</div>
+        <div class="sb-score" id="away-score">0</div>
+      </div>
+      <div class="sb-vs">vs</div>
+      <div class="sb-team">
+        <div class="sb-team-name" id="home-name">{{ game.home_team }}</div>
+        <div class="sb-score" id="home-score">0</div>
+      </div>
+    </div>
+    <div class="sb-inning-bar">
+      <span class="half-arrow" id="half-arrow">▲</span>
+      <span class="inning-pill" id="inning-display">1st</span>
+      <span id="batting-team-label">Away batting</span>
+    </div>
+    <div class="linescore">
+      <table id="linescore-table">
+        <thead id="linescore-head"></thead>
+        <tbody id="linescore-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Count + Bases -->
+  <div style="display:grid; grid-template-columns:1fr auto; gap:14px; align-items:start; margin-top:14px;">
+    <div>
+      <div class="count-panel">
+        <div class="count-cell">
+          <div class="count-dots" id="balls-dots">
+            <div class="count-dot" id="b0"></div>
+            <div class="count-dot" id="b1"></div>
+            <div class="count-dot" id="b2"></div>
+          </div>
+          <div class="count-cell-label">Balls</div>
+        </div>
+        <div class="count-cell">
+          <div class="count-dots" id="strikes-dots">
+            <div class="count-dot" id="s0"></div>
+            <div class="count-dot" id="s1"></div>
+          </div>
+          <div class="count-cell-label">Strikes</div>
+        </div>
+        <div class="count-cell">
+          <div class="count-dots">
+            <div class="count-dot" id="o0"></div>
+            <div class="count-dot" id="o1"></div>
+            <div class="count-dot" id="o2"></div>
+          </div>
+          <div class="count-cell-label">Outs</div>
+        </div>
+      </div>
+
+      <!-- Current batter / pitcher -->
+      <div class="matchup-bar">
+        <div class="matchup-side">
+          <span class="matchup-role">At bat</span>
+          <span class="matchup-name" id="batter-name">—</span>
+        </div>
+        <div class="matchup-divider">vs</div>
+        <div class="matchup-side" style="text-align:right;">
+          <span class="matchup-role">Pitching</span>
+          <span class="matchup-name" id="pitcher-name">—</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bases Diamond -->
+    <div>
+      <svg class="bases-svg" viewBox="0 0 110 110" width="110" height="110">
+        <rect x="5" y="5" width="100" height="100" rx="4" fill="none"/>
+        <!-- Outfield arc -->
+        <path d="M 15 95 Q 55 -5 95 95" fill="rgba(0,200,83,0.07)" stroke="rgba(0,200,83,0.2)" stroke-width="1"/>
+        <!-- Dirt infield -->
+        <polygon points="55,20 90,55 55,90 20,55" fill="rgba(180,120,60,0.18)" stroke="rgba(180,120,60,0.3)" stroke-width="1"/>
+        <!-- Bases -->
+        <!-- Second (top) -->
+        <rect id="base-second" x="48" y="13" width="14" height="14" rx="2" fill="var(--border-hi)" stroke="var(--chalk-dim)" stroke-width="1.5" transform="rotate(45 55 20)"/>
+        <!-- Third (left) -->
+        <rect id="base-third" x="13" y="48" width="14" height="14" rx="2" fill="var(--border-hi)" stroke="var(--chalk-dim)" stroke-width="1.5" transform="rotate(45 20 55)"/>
+        <!-- First (right) -->
+        <rect id="base-first" x="83" y="48" width="14" height="14" rx="2" fill="var(--border-hi)" stroke="var(--chalk-dim)" stroke-width="1.5" transform="rotate(45 90 55)"/>
+        <!-- Home -->
+        <polygon points="55,83 62,90 55,97 48,90" fill="white" stroke="var(--chalk-dim)" stroke-width="1.5"/>
+        <!-- Pitching rubber -->
+        <rect x="51" y="51" width="8" height="4" rx="1" fill="white" opacity="0.5"/>
+        <!-- Runner labels -->
+        <text id="r-first-lbl"  x="94" y="55" font-size="7" fill="var(--green)" font-weight="700" text-anchor="start" dominant-baseline="central" display="none"></text>
+        <text id="r-second-lbl" x="55" y="8"  font-size="7" fill="var(--green)" font-weight="700" text-anchor="middle" dominant-baseline="central" display="none"></text>
+        <text id="r-third-lbl"  x="7"  y="55" font-size="7" fill="var(--green)" font-weight="700" text-anchor="end" dominant-baseline="central" display="none"></text>
+      </svg>
+    </div>
+  </div>
+
+  <!-- Primary Scoring Actions -->
+  <div class="card section-card">
+    <div class="section-label">Count</div>
+    <div class="action-grid cols-3">
+      <button class="action-btn" style="background:var(--green);color:#000;" onclick="sendAction('ball')">
+        <span class="ab-label">Ball</span>
+      </button>
+      <button class="action-btn" style="background:var(--red);color:#fff;" onclick="sendAction('strike')">
+        <span class="ab-label">Strike</span>
+      </button>
+      <button class="action-btn" style="background:var(--amber);color:#000;" onclick="sendAction('foul')">
+        <span class="ab-label">Foul</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="card section-card">
+    <div class="section-label">Result</div>
+    <div class="action-grid cols-3">
+      <button class="action-btn" style="background:var(--navy-light);color:var(--chalk);border:1px solid var(--border-hi);" onclick="sendAction('out')">
+        <span class="ab-label">Out</span>
+        <span class="ab-sub">In play</span>
+      </button>
+      <button class="action-btn" style="background:rgba(0,200,83,0.15);color:var(--green);border:1px solid var(--green-dim);" onclick="sendAction('single')">
+        <span class="ab-label">Single</span>
+        <span class="ab-sub">1B</span>
+      </button>
+      <button class="action-btn" style="background:rgba(0,200,83,0.22);color:var(--green);border:1px solid var(--green-dim);" onclick="sendAction('double')">
+        <span class="ab-label">Double</span>
+        <span class="ab-sub">2B</span>
+      </button>
+      <button class="action-btn" style="background:rgba(0,200,83,0.3);color:var(--green);border:1px solid var(--green-dim);" onclick="sendAction('triple')">
+        <span class="ab-label">Triple</span>
+        <span class="ab-sub">3B</span>
+      </button>
+      <button class="action-btn" style="background:rgba(255,179,0,0.2);color:var(--amber);border:1px solid var(--amber);" onclick="sendAction('homerun')">
+        <span class="ab-label">Home Run</span>
+        <span class="ab-sub">⚾ HR</span>
+      </button>
+      <button class="action-btn" style="background:rgba(64,196,255,0.15);color:var(--sky);border:1px solid var(--sky);" onclick="sendAction('ball')">
+        <span class="ab-label">Walk</span>
+        <span class="ab-sub">BB</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Game Management -->
+  <div class="card section-card">
+    <div class="section-label">Game Management</div>
+    <div class="action-grid cols-2">
+      <button class="btn btn-ghost" onclick="sendAction('undo')">↩ Undo Count</button>
+      <button class="btn btn-ghost" onclick="openChangePitcher()">Change Pitcher</button>
+      <button class="btn btn-ghost" onclick="sendAction('end_inning')">End Half-Inning</button>
+      <button class="btn btn-danger" onclick="confirmEndGame()">End Game</button>
+    </div>
+  </div>
+
+  <!-- Pitch Count -->
+  <div class="card section-card">
+    <div class="section-label">Pitch Counts</div>
+    <div id="pitch-counts">
+      <div style="color:var(--chalk-dim); font-size:0.9rem;">No pitches recorded yet.</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Spray Chart Modal -->
+<div id="spray-modal" style="display:none; position:fixed; inset:0; z-index:300; background:rgba(5,12,25,0.9); backdrop-filter:blur(4px); padding:16px; overflow-y:auto;">
+  <div style="max-width:480px; margin:0 auto;">
+    <div class="card" style="border-color:var(--border-hi);">
+      <div class="flex-between" style="margin-bottom:14px;">
+        <div style="font-family:var(--font-display); font-size:1.4rem; font-weight:800;">Spray Chart</div>
+        <button class="btn btn-ghost btn-sm" onclick="closeSprayModal()">Close</button>
+      </div>
+      <div class="section-label">Tap the field to record a hit location</div>
+      <div style="position:relative; margin-top:8px;">
+        <canvas id="spray-canvas" width="440" height="380"></canvas>
+      </div>
+      <div class="spray-legend">
+        <div class="spray-legend-item"><div class="spray-dot" style="background:#00c853;"></div>Single</div>
+        <div class="spray-legend-item"><div class="spray-dot" style="background:#40c4ff;"></div>Double</div>
+        <div class="spray-legend-item"><div class="spray-dot" style="background:#ffb300;"></div>Triple</div>
+        <div class="spray-legend-item"><div class="spray-dot" style="background:#ff3b3b;"></div>Home Run</div>
+        <div class="spray-legend-item"><div class="spray-dot" style="background:rgba(255,255,255,0.3);"></div>Out</div>
+      </div>
+      <div style="margin-top:14px;">
+        <div class="section-label">Hit Type</div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button class="btn btn-sm" style="background:rgba(0,200,83,0.2);color:var(--green);border:1px solid var(--green-dim);" onclick="setHitType('single')" id="ht-single">Single</button>
+          <button class="btn btn-sm" style="background:rgba(64,196,255,0.15);color:var(--sky);border:1px solid var(--sky);" onclick="setHitType('double')" id="ht-double">Double</button>
+          <button class="btn btn-sm" style="background:rgba(255,179,0,0.2);color:var(--amber);border:1px solid var(--amber);" onclick="setHitType('triple')" id="ht-triple">Triple</button>
+          <button class="btn btn-sm btn-danger" onclick="setHitType('hr')" id="ht-hr">HR</button>
+          <button class="btn btn-sm btn-ghost" onclick="setHitType('out')" id="ht-out">Out</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Change Pitcher Modal -->
+<div id="pitcher-modal" style="display:none; position:fixed; inset:0; z-index:300; background:rgba(5,12,25,0.85); display:none; align-items:center; justify-content:center; padding:20px;">
+  <div class="card" style="width:100%; max-width:340px; border-color:var(--border-hi);">
+    <div style="font-family:var(--font-display); font-size:1.3rem; font-weight:800; margin-bottom:16px;">Change Pitcher</div>
+    <div class="field">
+      <label>New Pitcher Name</label>
+      <input id="new-pitcher-input" type="text" placeholder="Player name" autocomplete="off">
+    </div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:8px;">
+      <button class="btn btn-ghost" onclick="closePitcherModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="changePitcher()">Confirm</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const GAME_ID = {{ game.id }};
+  const HOME_TEAM = "{{ game.home_team }}";
+  const AWAY_TEAM = "{{ game.away_team }}";
+  const HOME_PLAYERS = {{ home_players | tojson }};
+  const AWAY_PLAYERS = {{ away_players | tojson }};
+
+  let state = null;
+  let pollingInterval = null;
+  let hitType = 'single';
+  let sprayCanvas, sprayCtx;
+  let allHits = [];
+
+  const ORDINALS = ['','1st','2nd','3rd','4th','5th','6th','7th','8th','9th','10th'];
+
+  // ── STATE MANAGEMENT ─────────────────────────────────────
+  async function fetchState() {
+    try {
+      const res = await fetch(`/api/games/${GAME_ID}/state`);
+      const newState = await res.json();
+      if (!state || newState.version !== state.version) {
+        state = newState;
+        renderState(state);
+      }
+    } catch(e) { /* offline — keep existing state */ }
+  }
+
+  async function sendAction(action, extra = {}) {
+    try {
+      const res = await fetch(`/api/games/${GAME_ID}/action`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ action, ...extra })
+      });
+      state = await res.json();
+      renderState(state);
+      fetchPitchCounts();
+    } catch(e) { showToast('Network error — retrying'); }
+  }
+
+  // ── RENDERING ─────────────────────────────────────────────
+  function renderState(s) {
+    // Scores
+    document.getElementById('home-score').textContent = s.home_score;
+    document.getElementById('away-score').textContent = s.away_score;
+
+    // Inning
+    const ord = ORDINALS[s.inning] || s.inning + 'th';
+    document.getElementById('inning-display').textContent = ord;
+    document.getElementById('half-arrow').textContent = s.half === 'top' ? '▲' : '▼';
+    const battingTeam = s.half === 'top' ? AWAY_TEAM : HOME_TEAM;
+    document.getElementById('batting-team-label').textContent = battingTeam + ' batting';
+
+    // Count dots
+    updateDots('b', s.balls, 4, 'on-ball');
+    updateDots('s', s.strikes, 3, 'on-strike');
+    updateDots('o', s.outs, 3, 'on-out');
+
+    // Linescore
+    renderLinescore(s);
+
+    // Bases
+    renderBases(s.runners);
+
+    // Matchup
+    const team = s.half === 'top' ? AWAY_PLAYERS : HOME_PLAYERS;
+    const idx = s.current_batter_idx[s.half] % Math.max(team.length, 1);
+    const batter = team[idx];
+    document.getElementById('batter-name').textContent = batter ? batter.name : '—';
+    document.getElementById('pitcher-name').textContent = s.current_pitcher[s.half] || '—';
+
+    if (s.game_over) {
+      document.getElementById('online-status').style.display = 'flex';
+      document.getElementById('online-status').innerHTML = '<span style="color:var(--amber)">Final</span>';
+      clearInterval(pollingInterval);
+    }
+  }
+
+  function updateDots(prefix, count, max, cls) {
+    for (let i = 0; i < max; i++) {
+      const el = document.getElementById(`${prefix}${i}`);
+      if (!el) continue;
+      el.className = 'count-dot' + (i < count ? ' ' + cls : '');
+    }
+  }
+
+  function renderLinescore(s) {
+    const maxInn = Math.max(7, s.inning);
+    let headHTML = '<tr><th></th>';
+    for (let i = 1; i <= maxInn; i++) headHTML += `<th>${i}</th>`;
+    headHTML += '<th style="border-left:2px solid var(--border-hi);">R</th></tr>';
+    document.getElementById('linescore-head').innerHTML = headHTML;
+
+    const rows = [
+      { label: AWAY_TEAM, team: 'away', half: 'top',    score: s.away_score },
+      { label: HOME_TEAM, team: 'home', half: 'bottom', score: s.home_score }
+    ];
+    let bodyHTML = '';
+    rows.forEach(row => {
+      bodyHTML += `<tr><th style="text-align:left; padding-left:8px;">${row.label}</th>`;
+      for (let i = 1; i <= maxInn; i++) {
+        const key = `${i}_${row.half}`;
+        const val = s.inning_scores[key] !== undefined ? s.inning_scores[key] : '';
+        const active = (i === s.inning && s.half === row.half) ? ' active-inn' : '';
+        bodyHTML += `<td class="${active}">${val}</td>`;
+      }
+      bodyHTML += `<td class="total">${row.score}</td></tr>`;
+    });
+    document.getElementById('linescore-body').innerHTML = bodyHTML;
+  }
+
+  function renderBases(runners) {
+    const colors = {
+      first: 'base-first', second: 'base-second', third: 'base-third'
+    };
+    const labels = {
+      first: 'r-first-lbl', second: 'r-second-lbl', third: 'r-third-lbl'
+    };
+    ['first','second','third'].forEach(base => {
+      const occupied = !!runners[base];
+      document.getElementById(colors[base]).setAttribute('fill', occupied ? 'var(--amber)' : 'var(--border-hi)');
+      const lbl = document.getElementById(labels[base]);
+      if (occupied) {
+        const name = runners[base];
+        lbl.textContent = name.split(' ').pop().slice(0,4).toUpperCase();
+        lbl.setAttribute('display','');
+      } else {
+        lbl.setAttribute('display','none');
+      }
+    });
+  }
+
+  // ── PITCH COUNTS ──────────────────────────────────────────
+  async function fetchPitchCounts() {
+    try {
+      const res = await fetch(`/api/games/${GAME_ID}/pitches`);
+      const data = await res.json();
+      const container = document.getElementById('pitch-counts');
+      if (!data.length) {
+        container.innerHTML = '<div style="color:var(--chalk-dim); font-size:0.9rem;">No pitches recorded yet.</div>';
+        return;
+      }
+      container.innerHTML = data.map(p => `
+        <div class="pitcher-row">
+          <div>
+            <div style="font-family:var(--font-display); font-size:0.95rem; font-weight:700;">${p.pitcher_name}</div>
+            <div style="font-size:0.75rem; color:var(--chalk-dim);">${p.pitcher_team} &nbsp;·&nbsp; ${p.strikes}K / ${p.balls}BB</div>
+          </div>
+          <div class="pitcher-count">${p.total} <span style="font-size:0.8rem; color:var(--chalk-dim);">pitches</span></div>
+        </div>
+      `).join('');
+    } catch(e) {}
+  }
+
+  // ── SPRAY CHART ───────────────────────────────────────────
+  const HIT_COLORS = {
+    single: '#00c853', double: '#40c4ff', triple: '#ffb300', hr: '#ff3b3b', out: 'rgba(255,255,255,0.3)'
+  };
+
+  function initSprayCanvas() {
+    sprayCanvas = document.getElementById('spray-canvas');
+    sprayCtx = sprayCanvas.getContext('2d');
+    drawField();
+
+    sprayCanvas.addEventListener('click', e => {
+      const rect = sprayCanvas.getBoundingClientRect();
+      const x = ((e.clientX - rect.left) / rect.width) * 100;
+      const y = ((e.clientY - rect.top) / rect.height) * 100;
+      recordHitLocation(x, y);
+    });
+    sprayCanvas.addEventListener('touchend', e => {
+      e.preventDefault();
+      const t = e.changedTouches[0];
+      const rect = sprayCanvas.getBoundingClientRect();
+      const x = ((t.clientX - rect.left) / rect.width) * 100;
+      const y = ((t.clientY - rect.top) / rect.height) * 100;
+      recordHitLocation(x, y);
+    });
+  }
+
+  function drawField() {
+    const w = sprayCanvas.width, h = sprayCanvas.height;
+    const ctx = sprayCtx;
+    ctx.clearRect(0, 0, w, h);
+
+    // Background
+    ctx.fillStyle = '#0d1f12';
+    ctx.fillRect(0, 0, w, h);
+
+    // Outfield grass arc
+    ctx.beginPath();
+    ctx.arc(w/2, h * 0.92, h * 0.88, Math.PI * 1.15, Math.PI * 1.85);
+    ctx.lineTo(w/2, h * 0.92);
+    ctx.closePath();
+    ctx.fillStyle = '#0a2010';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Infield dirt
+    const cx = w/2, cy = h * 0.78;
+    const r = h * 0.28;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(160,100,50,0.25)';
+    ctx.fill();
+
+    // Foul lines
+    ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(w/2, h*0.92); ctx.lineTo(0, h*0.05); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(w/2, h*0.92); ctx.lineTo(w, h*0.05); ctx.stroke();
+
+    // Bases diamond
+    const bx = cx, by = cy;
+    const bd = r * 0.65;
+    const bases = [[bx, by-bd],[bx+bd, by],[bx, by+bd],[bx-bd, by]];
+    ctx.fillStyle = 'white';
+    bases.forEach(([bsx, bsy]) => {
+      ctx.save();
+      ctx.translate(bsx, bsy);
+      ctx.rotate(Math.PI/4);
+      ctx.fillRect(-6,-6,12,12);
+      ctx.restore();
+    });
+
+    // Pitcher's mound
+    ctx.beginPath();
+    ctx.arc(cx, cy, 8, 0, Math.PI*2);
+    ctx.fillStyle = 'rgba(160,100,50,0.5)';
+    ctx.fill();
+
+    // Redraw all hits
+    allHits.forEach(h => drawHitDot(h.x_pct, h.y_pct, h.hit_type));
+  }
+
+  function drawHitDot(xPct, yPct, type) {
+    const w = sprayCanvas.width, h = sprayCanvas.height;
+    const x = (xPct / 100) * w;
+    const y = (yPct / 100) * h;
+    const ctx = sprayCtx;
+    ctx.beginPath();
+    ctx.arc(x, y, 7, 0, Math.PI*2);
+    ctx.fillStyle = HIT_COLORS[type] || 'white';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  async function recordHitLocation(x, y) {
+    try {
+      await fetch(`/api/games/${GAME_ID}/hit`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ hit_type: hitType, x, y })
+      });
+      allHits.push({ x_pct: x, y_pct: y, hit_type: hitType });
+      drawField();
+      showToast(hitType.toUpperCase() + ' recorded');
+    } catch(e) { showToast('Error recording hit'); }
+  }
+
+  function setHitType(type) {
+    hitType = type;
+    ['single','double','triple','hr','out'].forEach(t => {
+      const btn = document.getElementById(`ht-${t}`);
+      if (btn) btn.style.outline = t === type ? '2px solid var(--chalk)' : 'none';
+    });
+  }
+
+  async function openSprayModal() {
+    document.getElementById('spray-modal').style.display = 'block';
+    if (!sprayCanvas) initSprayCanvas();
+    // Load existing hits
+    const res = await fetch(`/api/games/${GAME_ID}/hits`);
+    allHits = await res.json();
+    drawField();
+    setHitType('single');
+  }
+
+  function closeSprayModal() {
+    document.getElementById('spray-modal').style.display = 'none';
+  }
+
+  // ── CHANGE PITCHER ────────────────────────────────────────
+  function openChangePitcher() {
+    document.getElementById('pitcher-modal').style.display = 'flex';
+    document.getElementById('new-pitcher-input').focus();
+  }
+  function closePitcherModal() {
+    document.getElementById('pitcher-modal').style.display = 'none';
+  }
+  async function changePitcher() {
+    const name = document.getElementById('new-pitcher-input').value.trim();
+    if (!name) { showToast('Enter pitcher name'); return; }
+    await sendAction('change_pitcher', { pitcher_name: name });
+    closePitcherModal();
+    showToast('Pitcher changed to ' + name);
+  }
+
+  // ── GAME MANAGEMENT ───────────────────────────────────────
+  function confirmEndGame() {
+    if (confirm('End the game? This will mark it as complete.')) {
+      sendAction('end_game');
+    }
+  }
+
+  function exportCSV() {
+    window.open(`/api/games/${GAME_ID}/export/csv`);
+  }
+
+  // ── INIT ──────────────────────────────────────────────────
+  document.getElementById('online-status').style.display = 'flex';
+  fetchState();
+  fetchPitchCounts();
+  // Poll every 2 seconds so other devices stay in sync
+  pollingInterval = setInterval(() => { fetchState(); }, 2000);
+</script>
+{% endblock %}

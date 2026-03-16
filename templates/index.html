@@ -1,0 +1,225 @@
+{% extends "base.html" %}
+{% block title %}Diamond Score — Games{% endblock %}
+
+{% block content %}
+<div style="padding-top: 28px;">
+
+  <!-- Hero -->
+  <div style="text-align:center; margin-bottom: 32px;">
+    <div style="font-family: var(--font-display); font-size: clamp(2.4rem, 8vw, 3.8rem); font-weight: 800; letter-spacing: 0.03em; line-height: 1;">
+      Diamond<span style="color:var(--green)">Score</span>
+    </div>
+    <div style="color: var(--chalk-dim); margin-top: 6px; font-size: 1rem;">
+      Baseball scorekeeping. No paper. No pencil.
+    </div>
+  </div>
+
+  <!-- New Game Button -->
+  <button class="btn btn-primary btn-lg btn-block" onclick="openNewGame()" style="margin-bottom:24px;">
+    ⚾ &nbsp; New Game
+  </button>
+
+  <!-- Active Games -->
+  {% set active = games | selectattr('state', 'equalto', 'active') | list %}
+  {% if active %}
+  <div class="section-label">Active Games</div>
+  {% for g in active %}
+  <a href="/game/{{ g.id }}" style="text-decoration:none;">
+    <div class="card" style="margin-bottom:10px; transition: border-color .15s;" onmouseover="this.style.borderColor='var(--border-hi)'" onmouseout="this.style.borderColor='var(--border)'">
+      <div class="flex-between">
+        <div>
+          <div style="font-family:var(--font-display); font-size:1.2rem; font-weight:700;">
+            {{ g.home_team }} <span style="color:var(--chalk-dim); font-weight:400;">vs</span> {{ g.away_team }}
+          </div>
+          <div style="font-size:0.82rem; color:var(--chalk-dim); margin-top:2px;">{{ g.date }}{% if g.location %} &nbsp;·&nbsp; {{ g.location }}{% endif %}</div>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="background:var(--green); color:#000; font-family:var(--font-display); font-weight:700; font-size:0.75rem; letter-spacing:0.1em; text-transform:uppercase; padding:3px 10px; border-radius:20px;">Live</span>
+          <span style="font-size:1.4rem; color:var(--chalk-dim);">›</span>
+        </div>
+      </div>
+    </div>
+  </a>
+  {% endfor %}
+  {% endif %}
+
+  <!-- Recent Completed -->
+  {% set completed = games | selectattr('state', 'equalto', 'completed') | list %}
+  {% if completed %}
+  <div class="section-label mt-24">Recent Completed</div>
+  {% for g in completed[:5] %}
+  <a href="/history" style="text-decoration:none;">
+    <div class="card" style="margin-bottom:10px; opacity:0.75;">
+      <div class="flex-between">
+        <div>
+          <div style="font-family:var(--font-display); font-size:1.1rem; font-weight:600;">
+            {{ g.home_team }} vs {{ g.away_team }}
+          </div>
+          <div style="font-size:0.8rem; color:var(--chalk-dim);">{{ g.date }}</div>
+        </div>
+        <span style="font-size:1.2rem; color:var(--chalk-dim);">›</span>
+      </div>
+    </div>
+  </a>
+  {% endfor %}
+  {% endif %}
+
+  {% if not games %}
+  <div class="card text-center" style="padding: 48px 20px;">
+    <div style="font-size: 3rem; margin-bottom: 12px;">⚾</div>
+    <div style="font-family: var(--font-display); font-size:1.3rem; font-weight:700;">No games yet</div>
+    <div style="color:var(--chalk-dim); margin-top:6px;">Tap "New Game" to get started</div>
+  </div>
+  {% endif %}
+
+</div>
+
+<!-- New Game Modal -->
+<div id="modal-overlay" style="display:none; position:fixed; inset:0; z-index:200; background:rgba(5,12,25,0.85); backdrop-filter:blur(4px); overflow-y:auto; padding: 20px 16px;">
+  <div style="max-width:520px; margin:0 auto;">
+    <div class="card" style="border-color: var(--border-hi);">
+      <div style="font-family:var(--font-display); font-size:1.6rem; font-weight:800; margin-bottom:20px;">
+        New Game Setup
+      </div>
+
+      <!-- Teams -->
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:16px;">
+        <div class="field">
+          <label>Home Team</label>
+          <input id="home-team" type="text" placeholder="Eagles" autocomplete="off">
+        </div>
+        <div class="field">
+          <label>Away Team</label>
+          <input id="away-team" type="text" placeholder="Bulldogs" autocomplete="off">
+        </div>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:20px;">
+        <div class="field">
+          <label>Date</label>
+          <input id="game-date" type="date">
+        </div>
+        <div class="field">
+          <label>Location (optional)</label>
+          <input id="game-location" type="text" placeholder="Field 3">
+        </div>
+      </div>
+
+      <!-- Roster tabs -->
+      <div style="display:flex; border-bottom:1px solid var(--border); margin-bottom:16px; gap:0;">
+        <button class="roster-tab active" data-team="home" onclick="switchTab('home')"
+          style="font-family:var(--font-display); font-weight:700; font-size:1rem; letter-spacing:.05em; text-transform:uppercase; background:none; border:none; color:var(--chalk); cursor:pointer; padding:8px 16px; border-bottom:2px solid var(--green); margin-bottom:-1px;">
+          Home Roster
+        </button>
+        <button class="roster-tab" data-team="away" onclick="switchTab('away')"
+          style="font-family:var(--font-display); font-weight:700; font-size:1rem; letter-spacing:.05em; text-transform:uppercase; background:none; border:none; color:var(--chalk-dim); cursor:pointer; padding:8px 16px; border-bottom:2px solid transparent; margin-bottom:-1px;">
+          Away Roster
+        </button>
+      </div>
+
+      <div id="roster-home">
+        <div id="home-players"></div>
+        <button class="btn btn-ghost btn-sm mt-8" onclick="addPlayer('home')">+ Add Player</button>
+      </div>
+      <div id="roster-away" style="display:none;">
+        <div id="away-players"></div>
+        <button class="btn btn-ghost btn-sm mt-8" onclick="addPlayer('away')">+ Add Player</button>
+      </div>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:24px;">
+        <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="createGame()">Start Game →</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const POSITIONS = ['P','C','1B','2B','3B','SS','LF','CF','RF','DH'];
+
+  function openNewGame() {
+    document.getElementById('game-date').value = new Date().toISOString().slice(0,10);
+    // Pre-populate 9 player slots for each team
+    document.getElementById('home-players').innerHTML = '';
+    document.getElementById('away-players').innerHTML = '';
+    for (let i = 1; i <= 9; i++) {
+      addPlayer('home', i);
+      addPlayer('away', i);
+    }
+    document.getElementById('modal-overlay').style.display = 'block';
+  }
+
+  function closeModal() {
+    document.getElementById('modal-overlay').style.display = 'none';
+  }
+
+  function switchTab(team) {
+    document.getElementById('roster-home').style.display = team === 'home' ? '' : 'none';
+    document.getElementById('roster-away').style.display = team === 'away' ? '' : 'none';
+    document.querySelectorAll('.roster-tab').forEach(t => {
+      const active = t.dataset.team === team;
+      t.style.color = active ? 'var(--chalk)' : 'var(--chalk-dim)';
+      t.style.borderBottomColor = active ? 'var(--green)' : 'transparent';
+    });
+  }
+
+  let playerCounts = { home: 0, away: 0 };
+
+  function addPlayer(team, order) {
+    playerCounts[team]++;
+    const ord = order || playerCounts[team];
+    const container = document.getElementById(`${team}-players`);
+    const row = document.createElement('div');
+    row.style.cssText = 'display:grid; grid-template-columns:32px 1fr 80px 32px; gap:6px; margin-bottom:8px; align-items:center;';
+    row.innerHTML = `
+      <span style="font-family:var(--font-display); font-weight:700; font-size:1.1rem; color:var(--chalk-dim); text-align:center;">${ord}</span>
+      <input type="text" placeholder="Player name" class="player-name" data-team="${team}" data-order="${ord}" autocomplete="off">
+      <select class="player-pos" data-team="${team}" data-order="${ord}">
+        <option value="">Pos</option>
+        ${POSITIONS.map(p => `<option value="${p}">${p}</option>`).join('')}
+      </select>
+      <button onclick="this.parentElement.remove()" style="background:none;border:none;color:var(--chalk-dim);cursor:pointer;font-size:1.1rem;padding:4px;">×</button>
+    `;
+    container.appendChild(row);
+  }
+
+  async function createGame() {
+    const homeTeam = document.getElementById('home-team').value.trim();
+    const awayTeam = document.getElementById('away-team').value.trim();
+    if (!homeTeam || !awayTeam) { showToast('Enter both team names'); return; }
+
+    const collectPlayers = (team) => {
+      const names = document.querySelectorAll(`.player-name[data-team="${team}"]`);
+      const positions = document.querySelectorAll(`.player-pos[data-team="${team}"]`);
+      const players = [];
+      names.forEach((n, i) => {
+        if (n.value.trim()) {
+          players.push({ order: i+1, name: n.value.trim(), position: positions[i]?.value || '' });
+        }
+      });
+      return players;
+    };
+
+    const res = await fetch('/api/games', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        home_team: homeTeam,
+        away_team: awayTeam,
+        date: document.getElementById('game-date').value,
+        location: document.getElementById('game-location').value.trim(),
+        home_players: collectPlayers('home'),
+        away_players: collectPlayers('away')
+      })
+    });
+    const data = await res.json();
+    window.location.href = `/game/${data.game_id}`;
+  }
+
+  // Close modal on overlay click
+  document.getElementById('modal-overlay').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeModal();
+  });
+</script>
+{% endblock %}

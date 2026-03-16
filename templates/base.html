@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0a1628">
+  <link rel="manifest" href="/static/manifest.json">
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+  <title>{% block title %}Diamond Score{% endblock %}</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <style>
+    /* ── Design Tokens ──────────────────────────────────────── */
+    :root {
+      --navy:      #0a1628;
+      --navy-mid:  #111f3a;
+      --navy-light:#1a2f54;
+      --panel:     #162040;
+      --border:    rgba(255,255,255,0.08);
+      --border-hi: rgba(255,255,255,0.18);
+
+      --green:     #00c853;
+      --green-dim: #00913c;
+      --red:       #ff3b3b;
+      --amber:     #ffb300;
+      --sky:       #40c4ff;
+      --chalk:     #f0ede6;
+      --chalk-dim: rgba(240,237,230,0.55);
+
+      --ball-green: #00c853;
+      --strike-red: #ff3b3b;
+      --foul-amber: #ffb300;
+
+      --font-display: 'Barlow Condensed', sans-serif;
+      --font-body:    'Barlow', sans-serif;
+
+      --r-sm: 6px;
+      --r-md: 10px;
+      --r-lg: 16px;
+
+      --shadow-panel: 0 2px 24px rgba(0,0,0,0.45);
+    }
+
+    /* ── Reset & Base ───────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { font-size: 16px; -webkit-tap-highlight-color: transparent; }
+    body {
+      background: var(--navy);
+      color: var(--chalk);
+      font-family: var(--font-body);
+      font-size: 1rem;
+      line-height: 1.5;
+      min-height: 100dvh;
+    }
+
+    /* Subtle diamond-pattern background */
+    body::before {
+      content: '';
+      position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background-image:
+        repeating-linear-gradient(45deg, transparent, transparent 40px, rgba(255,255,255,0.012) 40px, rgba(255,255,255,0.012) 41px),
+        repeating-linear-gradient(-45deg, transparent, transparent 40px, rgba(255,255,255,0.012) 40px, rgba(255,255,255,0.012) 41px);
+    }
+
+    /* ── Layout ─────────────────────────────────────────────── */
+    .page { position: relative; z-index: 1; max-width: 900px; margin: 0 auto; padding: 0 16px 80px; }
+
+    /* ── Nav ────────────────────────────────────────────────── */
+    nav {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(10,22,40,0.92);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 16px;
+      display: flex; align-items: center; gap: 20px; height: 54px;
+    }
+    .nav-logo {
+      font-family: var(--font-display);
+      font-size: 1.5rem; font-weight: 800; letter-spacing: 0.04em;
+      color: var(--chalk);
+      text-decoration: none;
+    }
+    .nav-logo span { color: var(--green); }
+    nav a {
+      font-family: var(--font-display);
+      font-size: 1rem; font-weight: 600; letter-spacing: 0.06em;
+      color: var(--chalk-dim); text-decoration: none; text-transform: uppercase;
+      transition: color .15s;
+    }
+    nav a:hover, nav a.active { color: var(--chalk); }
+    .nav-spacer { flex: 1; }
+    .nav-status {
+      font-size: 0.75rem; font-weight: 600; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--green);
+      display: flex; align-items: center; gap: 6px;
+    }
+    .nav-status .dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--green);
+      animation: pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: .5; transform: scale(0.75); }
+    }
+
+    /* ── Cards & Panels ─────────────────────────────────────── */
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      padding: 20px;
+      box-shadow: var(--shadow-panel);
+    }
+    .card + .card { margin-top: 14px; }
+
+    /* ── Buttons ────────────────────────────────────────────── */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      font-family: var(--font-display);
+      font-size: 1.1rem; font-weight: 700; letter-spacing: 0.06em;
+      text-transform: uppercase; text-decoration: none;
+      border: none; border-radius: var(--r-md);
+      padding: 10px 20px; cursor: pointer;
+      transition: opacity .12s, transform .08s;
+      user-select: none; -webkit-user-select: none;
+    }
+    .btn:active { transform: scale(0.96); opacity: .85; }
+
+    .btn-primary  { background: var(--green);  color: #000; }
+    .btn-danger   { background: var(--red);    color: #fff; }
+    .btn-amber    { background: var(--amber);  color: #000; }
+    .btn-sky      { background: var(--sky);    color: #000; }
+    .btn-ghost    { background: var(--navy-light); color: var(--chalk); border: 1px solid var(--border-hi); }
+    .btn-sm       { font-size: 0.85rem; padding: 6px 14px; }
+    .btn-lg       { font-size: 1.3rem; padding: 14px 28px; }
+    .btn-block    { width: 100%; }
+
+    /* ── Action Grid (scoring buttons) ──────────────────────── */
+    .action-grid {
+      display: grid;
+      gap: 10px;
+    }
+    .action-grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
+    .action-grid.cols-2 { grid-template-columns: repeat(2, 1fr); }
+    .action-btn {
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      font-family: var(--font-display);
+      font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+      border: none; border-radius: var(--r-md);
+      cursor: pointer; padding: 14px 8px;
+      transition: opacity .12s, transform .08s;
+      user-select: none;
+    }
+    .action-btn:active { transform: scale(0.94); opacity: .8; }
+    .action-btn .ab-label { font-size: 1.05rem; }
+    .action-btn .ab-sub   { font-size: 0.7rem; opacity: .7; margin-top: 2px; }
+
+    /* ── Count Indicators ───────────────────────────────────── */
+    .count-row {
+      display: flex; gap: 8px; align-items: center;
+    }
+    .count-dot {
+      width: 16px; height: 16px; border-radius: 50%;
+      border: 2px solid var(--border-hi);
+      transition: background .2s, border-color .2s;
+    }
+    .count-dot.on-ball   { background: var(--ball-green); border-color: var(--ball-green); }
+    .count-dot.on-strike { background: var(--strike-red); border-color: var(--strike-red); }
+    .count-dot.on-out    { background: var(--amber); border-color: var(--amber); }
+
+    /* ── Section Headers ────────────────────────────────────── */
+    .section-label {
+      font-family: var(--font-display);
+      font-size: 0.8rem; font-weight: 700; letter-spacing: 0.14em;
+      text-transform: uppercase; color: var(--chalk-dim);
+      margin-bottom: 10px;
+    }
+
+    /* ── Form Elements ──────────────────────────────────────── */
+    input, select, textarea {
+      background: var(--navy-light);
+      border: 1px solid var(--border-hi);
+      border-radius: var(--r-sm);
+      color: var(--chalk);
+      font-family: var(--font-body);
+      font-size: 1rem;
+      padding: 10px 12px;
+      width: 100%;
+      outline: none;
+      transition: border-color .15s;
+    }
+    input:focus, select:focus { border-color: var(--green); }
+    label { display: block; font-size: 0.85rem; color: var(--chalk-dim); margin-bottom: 4px; }
+    .field { margin-bottom: 14px; }
+
+    /* ── Toast ──────────────────────────────────────────────── */
+    #toast {
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+      background: var(--navy-light); border: 1px solid var(--border-hi);
+      color: var(--chalk); border-radius: var(--r-md);
+      padding: 10px 22px;
+      font-family: var(--font-display); font-size: 1rem; font-weight: 600;
+      letter-spacing: 0.06em; text-transform: uppercase;
+      opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 9999;
+    }
+    #toast.show { opacity: 1; }
+
+    /* ── Responsive ─────────────────────────────────────────── */
+    @media (max-width: 480px) {
+      .card { padding: 14px; }
+      .btn-lg { font-size: 1.1rem; padding: 12px 20px; }
+    }
+
+    /* ── Utilities ──────────────────────────────────────────── */
+    .flex        { display: flex; }
+    .flex-center { display: flex; align-items: center; justify-content: center; }
+    .flex-between{ display: flex; align-items: center; justify-content: space-between; }
+    .gap-8  { gap: 8px; }
+    .gap-12 { gap: 12px; }
+    .gap-16 { gap: 16px; }
+    .mt-8   { margin-top: 8px; }
+    .mt-16  { margin-top: 16px; }
+    .mt-24  { margin-top: 24px; }
+    .text-green  { color: var(--green); }
+    .text-red    { color: var(--red); }
+    .text-amber  { color: var(--amber); }
+    .text-dim    { color: var(--chalk-dim); }
+    .text-center { text-align: center; }
+    .fw-700 { font-weight: 700; }
+    .condensed { font-family: var(--font-display); }
+  </style>
+
+  {% block head %}{% endblock %}
+</head>
+<body>
+
+<nav>
+  <a href="/" class="nav-logo">Diamond<span>Score</span></a>
+  <a href="/" class="{% if request.path == '/' %}active{% endif %}">Games</a>
+  <a href="/history" class="{% if request.path == '/history' %}active{% endif %}">History</a>
+  <span class="nav-spacer"></span>
+  <span class="nav-status" id="online-status" style="display:none">
+    <span class="dot"></span>Live
+  </span>
+</nav>
+
+<div class="page">
+  {% block content %}{% endblock %}
+</div>
+
+<div id="toast"></div>
+
+<script>
+  // Register service worker for offline / PWA support
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/static/sw.js').catch(() => {});
+  }
+
+  function showToast(msg, duration = 1800) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), duration);
+  }
+</script>
+
+{% block scripts %}{% endblock %}
+</body>
+</html>
