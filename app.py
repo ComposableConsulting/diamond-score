@@ -109,6 +109,26 @@ def init_db():
         )
     """)
 
+    # Detailed pitch location tracking — zone 1-9 (3x3 grid), pitch type, result
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS pitch_locations (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_id      INTEGER NOT NULL,
+            inning       INTEGER NOT NULL,
+            half         TEXT    NOT NULL,
+            pitcher_name TEXT    NOT NULL,
+            batter_name  TEXT,
+            pitch_type   TEXT    NOT NULL,  -- 'fastball','curveball','changeup','slider','sinker'
+            zone         INTEGER NOT NULL,  -- 1-9 (3x3 grid, 1=top-left, 9=bottom-right)
+            x_pct        REAL    NOT NULL,  -- exact tap position 0-100
+            y_pct        REAL    NOT NULL,
+            result       TEXT    NOT NULL,  -- 'ball','called_strike','swinging_strike','foul','hit'
+            pitch_num    INTEGER NOT NULL,  -- pitch number in the game
+            timestamp    TEXT    NOT NULL,
+            FOREIGN KEY (game_id) REFERENCES games(id)
+        )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -165,8 +185,8 @@ def game(game_id):
     conn.close()
     if not g:
         return "Game not found", 404
-    home_players = [dict(p) for p in players if p["team"] == "home"]
-    away_players = [dict(p) for p in players if p["team"] == "away"]
+    home_players = [p for p in players if p["team"] == "home"]
+    away_players = [p for p in players if p["team"] == "away"]
     return render_template("game.html", game=g,
                            home_players=home_players,
                            away_players=away_players)
@@ -532,6 +552,133 @@ def export_csv(game_id):
         as_attachment=True,
         download_name=f"game_{game_id}_{game['date']}.csv"
     )
+
+
+# ---------------------------------------------------------------------------
+# PITCH LOCATION TRACKING
+# ---------------------------------------------------------------------------
+
+@app.route("/pitch/<int:game_id>")
+def pitch_tracker(game_id):
+    """Dedicated pitch location tracking page — runs on a second tablet."""
+    conn = get_db()
+    g = conn.execute("SELECT * FROM games WHERE id=?", (game_id,)).fetchone()
+    conn.close()
+    if not g:
+        return "Game not found", 404
+    return render_template("pitch_tracker.html", game=dict(g))
+
+
+@app.route("/api/games/<int:game_id>/pitch_location", methods=["POST"])
+def record_pitch_location(game_id):
+    """Record a single pitch location with type and result."""
+    data = request.json
+    now = datetime.now().isoformat()
+    conn = get_db()
+
+    # Get current game state for inning/half/pitcher context
+    row = conn.execute(
+        "SELECT state_json FROM game_state WHERE game_id=?", (game_id,)
+    ).fetchone()
+    state = json.loads(row["state_json"])
+
+    half = state["half"]
+    fielding_team = "home" if half == "top" else "away"
+
+    # Get current batter name
+    players = conn.execute(
+        "SELECT * FROM players WHERE game_id=? ORDER BY batting_order",
+        (game_id,)
+    ).fetchall()
+    batting_team = "away" if half == "top" else "home"
+    team_players = [p for p in players if p["team"] == batting_team]
+    idx = state["current_batter_idx"][half] % max(len(team_players), 1)
+    batter = team_players[idx]["name"] if team_players else "Unknown"
+
+    # Count total pitches this game for pitch_num
+    count_row = conn.execute(
+        "SELECT COUNT(*) as c FROM pitch_locations WHERE game_id=?", (game_id,)
+    ).fetchone()
+    pitch_num = count_row["c"] + 1
+
+    conn.execute(
+        """INSERT INTO pitch_locations
+           (game_id, inning, half, pitcher_name, batter_name, pitch_type,
+            zone, x_pct, y_pct, result, pitch_num, timestamp)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (game_id, state["inning"], half,
+         state["current_pitcher"][half], batter,
+         data["pitch_type"], data["zone"],
+         data["x"], data["y"], data["result"],
+         pitch_num, now)
+    )
+    conn.commit()
+
+    # Return updated stats for this pitcher
+    stats = conn.execute(
+        """SELECT zone, result, COUNT(*) as cnt
+           FROM pitch_locations
+           WHERE game_id=? AND pitcher_name=?
+           GROUP BY zone, result""",
+        (game_id, state["current_pitcher"][half])
+    ).fetchall()
+    conn.close()
+    return jsonify({
+        "ok": True,
+        "pitch_num": pitch_num,
+        "stats": [dict(s) for s in stats]
+    })
+
+
+@app.route("/api/games/<int:game_id>/pitch_locations")
+def get_pitch_locations(game_id):
+    """Return all pitch locations, optionally filtered by pitcher."""
+    pitcher = request.args.get("pitcher")
+    conn = get_db()
+    if pitcher:
+        rows = conn.execute(
+            "SELECT * FROM pitch_locations WHERE game_id=? AND pitcher_name=? ORDER BY pitch_num",
+            (game_id, pitcher)
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM pitch_locations WHERE game_id=? ORDER BY pitch_num",
+            (game_id,)
+        ).fetchall()
+
+    # Also return zone summary (count per zone per result)
+    zone_summary = conn.execute(
+        """SELECT pitcher_name, pitch_type, zone, result, COUNT(*) as cnt
+           FROM pitch_locations WHERE game_id=?
+           GROUP BY pitcher_name, pitch_type, zone, result""",
+        (game_id,)
+    ).fetchall()
+
+    # Pitcher list
+    pitchers = conn.execute(
+        "SELECT DISTINCT pitcher_name FROM pitch_locations WHERE game_id=?",
+        (game_id,)
+    ).fetchall()
+
+    conn.close()
+    return jsonify({
+        "pitches": [dict(r) for r in rows],
+        "zone_summary": [dict(z) for z in zone_summary],
+        "pitchers": [p["pitcher_name"] for p in pitchers]
+    })
+
+
+@app.route("/api/games/<int:game_id>/pitch_locations/<int:pitch_id>", methods=["DELETE"])
+def delete_pitch_location(game_id, pitch_id):
+    """Delete a pitch — for correcting mistakes."""
+    conn = get_db()
+    conn.execute(
+        "DELETE FROM pitch_locations WHERE id=? AND game_id=?",
+        (pitch_id, game_id)
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True})
 
 
 # ---------------------------------------------------------------------------
