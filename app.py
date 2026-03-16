@@ -185,8 +185,8 @@ def game(game_id):
     conn.close()
     if not g:
         return "Game not found", 404
-    home_players = [p for p in players if p["team"] == "home"]
-    away_players = [p for p in players if p["team"] == "away"]
+    home_players = [dict(p) for p in players if p["team"] == "home"]
+    away_players = [dict(p) for p in players if p["team"] == "away"]
     return render_template("game.html", game=g,
                            home_players=home_players,
                            away_players=away_players)
